@@ -33,6 +33,8 @@ private:
 private:
 	void ApplyRotaion(float DeltaTime);
 	void UpdateLocationFromVelocity(float DeltaTime);
+	FVector GetAirResistance();
+	FVector GetRolllingResistance();
 
 	// The mass of the car (kg).
 	UPROPERTY(EditAnywhere)
@@ -42,9 +44,17 @@ private:
 	UPROPERTY(EditAnywhere)
 	float MaxDrivingForce = 10000.f;
 
-	//The Number of degrees rotated per second at full control throw (degress/s).
+	//Minimum radius of the car turning circle at full llock (m).
 	UPROPERTY(EditAnywhere)
-	float MaxDegressPerSecond = 90.f;
+	float MinTurningRadius = 10.f;
+
+	//Higher means more drag (kg/s)
+	UPROPERTY(EditAnywhere)
+	float DragCoefficient = 16.f;
+
+	//Higher means more rolling resistance (kg/s)
+	UPROPERTY(EditAnywhere)
+	float RollingResistanceCoefficient = 0.015;
 
 	FVector Velocity;
 
