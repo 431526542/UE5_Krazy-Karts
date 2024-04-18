@@ -28,7 +28,12 @@ public:
 
 private:
 	void MoveForward(float Value);
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_MoveForward(float Value);
+
 	void MoveRight(float Value);
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_MoveRight(float Value);
 
 private:
 	void ApplyRotaion(float DeltaTime);
@@ -56,10 +61,14 @@ private:
 	UPROPERTY(EditAnywhere)
 	float RollingResistanceCoefficient = 0.015;
 
-	FVector Velocity;
-
+	UPROPERTY(Replicated)
 	float Throttle;
-
+	UPROPERTY(Replicated)
 	float Steeringthrow;
-
+	UPROPERTY(Replicated)
+	FVector Velocity;
+	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedTransform)
+	FTransform ReplicatedTransform;
+	UFUNCTION()
+	void OnRep_ReplicatedTransform();
 };
