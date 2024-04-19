@@ -29,10 +29,7 @@ void AGoKart::BeginPlay()
 void AGoKart::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(AGoKart, ReplicatedTransform);
-	DOREPLIFETIME(AGoKart, Velocity);
-	DOREPLIFETIME(AGoKart, Throttle);
-	DOREPLIFETIME(AGoKart, Steeringthrow);
+	DOREPLIFETIME(AGoKart, ServerState);
 }
 
 FString GetEnumText(ENetRole Role)
@@ -56,35 +53,84 @@ FString GetEnumText(ENetRole Role)
 void AGoKart::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	FVector Force = GetActorForwardVector() * MaxDrivingForce * Throttle;
-	Force += GetAirResistance();
-	Force += GetRolllingResistance();
-	FVector Acceleration = Force / Mass;
-
-	Velocity = Velocity + Acceleration * DeltaTime;
-
-	ApplyRotaion(DeltaTime);
-	UpdateLocationFromVelocity(DeltaTime);
-
-	if (HasAuthority())
+	
+	if (GetLocalRole() == ROLE_AutonomousProxy)
 	{
-		ReplicatedTransform = GetActorTransform();
+		FGoKartMove Move = CreateMove(DeltaTime);
+		SimulateMove(Move);
+		UnacknowledgedMoves.Add(Move);
+		Server_SendMove(Move);
+	}
+
+	//We are the Server and in control of the pawn
+	if (GetLocalRole() == ROLE_Authority && IsLocallyControlled())
+	{
+		FGoKartMove Move = CreateMove(DeltaTime);
+		Server_SendMove(Move);
+	}
+
+	if (GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		SimulateMove(ServerState.LastMove);
 	}
 
 	DrawDebugString(GetWorld(), FVector(0, 0, 100), 
 		GetEnumText(GetLocalRole()), this, FColor::White, DeltaTime);
 }
 
-void AGoKart::OnRep_ReplicatedTransform()
+void AGoKart::OnRep_ServerState()
 {
-	SetActorTransform(ReplicatedTransform);
+	SetActorTransform(ServerState.Transform);
+	Velocity = ServerState.Velocity;
+
+	ClearAcknowledgeMoves(ServerState.LastMove);
+
+	for (const FGoKartMove& Move : UnacknowledgedMoves)
+	{
+		SimulateMove(Move);
+	}
 }
 
-void AGoKart::ApplyRotaion(float DeltaTime)
+void AGoKart::SimulateMove(const FGoKartMove& Move)
+{
+	FVector Force = GetActorForwardVector() * MaxDrivingForce * Move.Throttle;
+	Force += GetAirResistance();
+	Force += GetRolllingResistance();
+	FVector Acceleration = Force / Mass;
+	Velocity = Velocity + Acceleration * Move.DeltaTime;
+	ApplyRotaion(Move.DeltaTime, Move.Steeringthrow);
+	UpdateLocationFromVelocity(Move.DeltaTime);
+}
+
+FGoKartMove AGoKart::CreateMove(float DeltaTime)
+{
+	FGoKartMove Move;
+	Move.DeltaTime = DeltaTime;
+	Move.Steeringthrow = Steeringthrow;
+	Move.Throttle = Throttle;
+	Move.Time = GetWorld()->TimeSeconds;
+
+	return Move;
+}
+
+void AGoKart::ClearAcknowledgeMoves(FGoKartMove LastMove)
+{
+	TArray<FGoKartMove> NewMoves;
+	for (const FGoKartMove& Move : UnacknowledgedMoves)
+	{
+		if (Move.Time > LastMove.Time)
+		{
+			NewMoves.Add(Move);
+		}
+	}
+
+	UnacknowledgedMoves = NewMoves;
+}
+
+void AGoKart::ApplyRotaion(float DeltaTime, float SteeringThrow)
 {
 	float DeltaLocation = FVector::DotProduct(GetActorForwardVector(),Velocity) * DeltaTime;
-	float RotationAngle = DeltaLocation / MinTurningRadius * Steeringthrow;
+	float RotationAngle = DeltaLocation / MinTurningRadius * SteeringThrow;
 	FQuat RotationDelta(GetActorUpVector(), RotationAngle);
 	Velocity = RotationDelta.RotateVector(Velocity);
 	AddActorWorldRotation(RotationDelta);
@@ -125,28 +171,23 @@ void AGoKart::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AGoKart::MoveForward(float Value)
 {
 	Throttle = Value;
-	Server_MoveForward(Value);
-}
-void AGoKart::Server_MoveForward_Implementation(float Value)
-{
-	Throttle = Value;
-}
-bool AGoKart::Server_MoveForward_Validate(float Value)//유효성 검사
-{
-	return FMath::Abs(Value) <= 1;
 }
 
 void AGoKart::MoveRight(float Value)
 {
 	Steeringthrow = -Value;
-	Server_MoveRight(Value);
 }
-void AGoKart::Server_MoveRight_Implementation(float Value)
+
+void AGoKart::Server_SendMove_Implementation(FGoKartMove Move)
 {
-	Steeringthrow = -Value;
+	SimulateMove(Move);
+
+	ServerState.LastMove = Move;
+	ServerState.Transform = GetActorTransform();
+	ServerState.Velocity = Velocity;
 }
-bool AGoKart::Server_MoveRight_Validate(float Value)
+bool AGoKart::Server_SendMove_Validate(FGoKartMove Move)//유효성 검사
 {
-	return FMath::Abs(Value) <= 1;
+	return true; //TODO : Make better validation
 }
 
