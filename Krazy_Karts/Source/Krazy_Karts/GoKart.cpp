@@ -23,11 +23,6 @@ AGoKart::AGoKart()
 void AGoKart::BeginPlay()
 {
 	Super::BeginPlay();
-
-	if (HasAuthority())
-	{
-		NetUpdateFrequency = 1;
-	}
 }
 
 FString GetEnumText(ENetRole Role)
